@@ -1,0 +1,205 @@
+"use strict";
+
+var $j = jQuery.noConflict();
+
+$j(document).bind("gform_post_render", function (event, form_id, current_page) {
+    var gfipMainData = window["gfipFieldsData_" + form_id];
+
+    function createCookie(name, value, minutes) {
+        if (minutes) {
+            var date = new Date();
+            date.setTime(date.getTime() + minutes * 60 * 1000);
+            var expires = "; expires=" + date.toGMTString();
+        } else {
+            var expires = "";
+        }
+        document.cookie = name + "=" + value + expires + "; path=/";
+    }
+
+    function getCookie(cname) {
+        let name = cname + "=";
+        let ca = document.cookie.split(";");
+        for (let i = 0; i < ca.length; i++) {
+            let c = ca[i];
+            while (c.charAt(0) == " ") {
+                c = c.substring(1);
+            }
+            if (c.indexOf(name) == 0) {
+                return c.substring(name.length, c.length);
+            }
+        }
+        return "";
+    }
+
+    if (!gfipMainData) {
+        return;
+    }
+
+    var arr_el = gfipMainData.elements;
+
+    $j.each(arr_el, function (index, name) {
+        var obj = name;
+
+        var options = {
+            utilsScript: gfipMainData.utilsScript,
+        };
+
+        for (var i = 0; i < obj.length; i++) {
+            var inputTel = obj[0],
+                autoIp = obj[1],
+                validNum = obj[2],
+                intCountry = obj[3],
+                preCountry = obj[4],
+                flagOpt = obj[5],
+                hiddenInput = obj[6];
+
+            options.hiddenInput = hiddenInput;
+
+            if (flagOpt == "" || flagOpt == "flagonly") {
+                options.nationalMode = true;
+            } else if (flagOpt == "flagcode") {
+                options.nationalMode = false;
+                options.autoHideDialCode = false;
+            } else {
+                options.nationalMode = false;
+                options.separateDialCode = true;
+            }
+
+            if (
+                (intCountry != "none" && autoIp === false) ||
+                (intCountry != "none" && autoIp === "")
+            ) {
+                options.initialCountry = intCountry;
+            }
+
+            if (preCountry != "none") {
+                options.preferredCountries = preCountry;
+            }
+
+            if (autoIp === true) {
+                options.initialCountry = "auto";
+                options.geoIpLookup = function (success, failure) {
+                    $j.get("https://ipinfo.io", function () {}, "jsonp").always(
+                        function (resp) {
+                            var countryCode =
+                                resp && resp.country ? resp.country : "";
+                            success(countryCode);
+                        }
+                    );
+                };
+            }
+        }
+
+        $j(inputTel).intlTelInput(options);
+    });
+
+    /*
+     *   Phone number validation
+     */
+
+    $j.each(arr_el, function (index) {
+        var inputId = "#input_" + index;
+        var teleInput = $j(inputId);
+
+        teleInput
+            .parent()
+            .after('<span class="spf-phone valid-msg hide"></span>');
+        teleInput
+            .parent()
+            .after('<span class="spf-phone error-msg hide"></span>');
+
+        teleInput.blur(function () {
+            isInputValid($j(this));
+        });
+
+        teleInput.keydown(function () {
+            hideInputValidation($j(this));
+        });
+
+        function hideInputValidation(phoneID) {
+            phoneID.removeClass("error");
+            phoneID
+                .parent()
+                .parent()
+                .parent()
+                .find(".valid-msg")
+                .addClass("hide");
+            phoneID
+                .parent()
+                .parent()
+                .parent()
+                .find(".error-msg")
+                .addClass("hide");
+        }
+
+        function isInputValid(phoneID) {
+            var errorMsg = phoneID
+                    .parent()
+                    .parent()
+                    .parent()
+                    .find(".error-msg"),
+                validMsg = phoneID
+                    .parent()
+                    .parent()
+                    .parent()
+                    .find(".valid-msg");
+
+            if ($j.trim(phoneID.val())) {
+                if (phoneID.intlTelInput("isValidNumber")) {
+                    validMsg.removeClass("hide");
+                    errorMsg.addClass("hide");
+                    $j("#gfip_input_" + index)
+                        .val("1")
+                        .trigger("change");
+                    var nationalPhone = teleInput.intlTelInput("getNumber");
+                    createCookie("gfipverify_" + index, nationalPhone, 1);
+                    $j(teleInput)
+                        .closest("div")
+                        .find("input:hidden")
+                        .val(nationalPhone);
+                } else {
+                    phoneID.addClass("error");
+                    errorMsg.removeClass("hide");
+                    validMsg.addClass("hide");
+                    $j("#gfip_input_" + index)
+                        .val("0")
+                        .trigger("change");
+                    var nationalPhone = teleInput.intlTelInput("getNumber");
+                    createCookie("gfipverify_" + index, nationalPhone, 1);
+                    $j(teleInput)
+                        .closest("div")
+                        .find("input:hidden")
+                        .val(nationalPhone);
+                }
+            }
+        }
+
+        $j("#gfip_input_" + index).on("change", function () {
+            let inputVal = jQuery(this).val();
+            createCookie("gfipvalid_" + index, inputVal, 1);
+        });
+
+        var cookeNumber = getCookie("gfipverify_" + index);
+
+        var nps = jQuery(teleInput).val();
+
+        if (nps) {
+            $j(teleInput).closest("div").find("input:hidden").val(cookeNumber);
+        } else {
+            $j("#gfip_input_" + index)
+                .val("0")
+                .trigger("change");
+        }
+
+        $j(teleInput).on("keypress keyup blur", function (event) {
+            // $j(this).val(
+            //     $j(this)
+            //         .val()
+            //         .replace(/[^\d].+/, "")
+            // );
+            if (event.which < 48 || event.which > 57) {
+                event.preventDefault();
+            }
+        });
+    });
+});
